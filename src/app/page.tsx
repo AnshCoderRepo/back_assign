@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { 
   LayoutDashboard, 
   Wallet, 
@@ -24,20 +25,26 @@ export default function FinanceApp() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Registration state
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [registerName, setRegisterName] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerError, setRegisterError] = useState('');
-  const [registerSuccess, setRegisterSuccess] = useState('');
+  // Login state
+  const [loginRole, setLoginRole] = useState('ADMIN');
 
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+    if (savedToken && savedUser && savedUser !== 'undefined') {
+      try {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        // If JSON parse fails, localStorage is corrupted. Clear it.
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setToken(null);
+        setUser(null);
+      }
+    } else if (savedUser === 'undefined') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
     }
     setLoading(false);
   }, []);
@@ -77,11 +84,15 @@ export default function FinanceApp() {
       });
       const data = await res.json();
       
-      if (res.ok) {
-        setToken(data.token);
-        setUser(data.user);
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+      if (res.ok && data.success) {
+        if (data.data.user.role !== loginRole) {
+          setLoginError(`Account exists, but it lacks ${loginRole} privileges. Found role: ${data.data.user.role}`);
+          return;
+        }
+        setToken(data.data.token);
+        setUser(data.data.user);
+        localStorage.setItem('token', data.data.token);
+        localStorage.setItem('user', JSON.stringify(data.data.user));
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -90,37 +101,13 @@ export default function FinanceApp() {
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRegisterError('');
-    setRegisterSuccess('');
-    try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          name: registerName, 
-          email: registerEmail, 
-          password: registerPassword 
-        })
-      });
-      const data = await res.json();
-      
-      if (res.ok) {
-        setRegisterSuccess('Account created successfully! You can now login.');
-        setIsRegistering(false);
-        setRegisterName('');
-        setRegisterEmail('');
-        setRegisterPassword('');
-      } else {
-        setRegisterError(data.error || 'Registration failed');
-      }
-    } catch (error) {
-      setRegisterError('Server error');
-    }
-  };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      console.error('Logout error', e);
+    }
     setToken(null);
     setUser(null);
     localStorage.removeItem('token');
@@ -142,31 +129,7 @@ export default function FinanceApp() {
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Secure access to your data</p>
           </div>
 
-          {/* Tab buttons */}
-          <div className="flex rounded-xl bg-slate-100 dark:bg-slate-700 p-1">
-            <button
-              onClick={() => setIsRegistering(false)}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                !isRegistering 
-                  ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => setIsRegistering(true)}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                isRegistering 
-                  ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm' 
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
 
-          {!isRegistering ? (
             <form className="mt-8 space-y-6" onSubmit={handleLogin}>
               {loginError && (
                 <div className="p-3 text-sm text-red-500 bg-red-100/50 rounded-xl text-center">
@@ -175,14 +138,14 @@ export default function FinanceApp() {
               )}
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email or Username</label>
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
-                    placeholder="admin@example.com"
+                    placeholder="admin@example.com or admin123"
                   />
                 </div>
                 <div>
@@ -196,6 +159,18 @@ export default function FinanceApp() {
                     placeholder="••••••••"
                   />
                 </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Sign in as Role</label>
+                  <select
+                    value={loginRole}
+                    onChange={e => setLoginRole(e.target.value)}
+                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all cursor-pointer"
+                  >
+                    <option value="ADMIN">Admin (Full Control)</option>
+                    <option value="ANALYST">Analyst (Records Analytics)</option>
+                    <option value="VIEWER">Viewer (Dashboard Access Only)</option>
+                  </select>
+                </div>
               </div>
               <button
                 type="submit"
@@ -204,62 +179,6 @@ export default function FinanceApp() {
                 Sign In
               </button>
             </form>
-          ) : (
-            <form className="mt-8 space-y-6" onSubmit={handleRegister}>
-              {registerError && (
-                <div className="p-3 text-sm text-red-500 bg-red-100/50 rounded-xl text-center">
-                  {registerError}
-                </div>
-              )}
-              {registerSuccess && (
-                <div className="p-3 text-sm text-green-600 bg-green-100/50 rounded-xl text-center">
-                  {registerSuccess}
-                </div>
-              )}
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={registerName}
-                    onChange={e => setRegisterName(e.target.value)}
-                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
-                    placeholder="John Doe"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
-                  <input
-                    type="email"
-                    required
-                    value={registerEmail}
-                    onChange={e => setRegisterEmail(e.target.value)}
-                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
-                    placeholder="admin@example.com"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={registerPassword}
-                    onChange={e => setRegisterPassword(e.target.value)}
-                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="w-full py-3.5 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-600/30 active:scale-[0.98]"
-              >
-                Create Account
-              </button>
-            </form>
-          )}
         </div>
       </div>
     );
@@ -281,15 +200,17 @@ export default function FinanceApp() {
             <LayoutDashboard size={20} />
             Dashboard
           </a>
-          <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <Wallet size={20} />
-            Transactions
-          </a>
+          {user?.role !== 'VIEWER' && (
+            <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <Wallet size={20} />
+              Transactions
+            </a>
+          )}
           {user?.role === 'ADMIN' && (
-            <a href="/users" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <Link href="/users" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <UserIcon size={20} />
               Users Setup
-            </a>
+            </Link>
           )}
         </nav>
 
@@ -317,8 +238,16 @@ export default function FinanceApp() {
       <main className="flex-1 overflow-auto p-8">
         <header className="flex justify-between items-end mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-            <p className="text-slate-500 dark:text-slate-400 mt-1">Here's your financial summary today.</p>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {user?.role === 'ADMIN' ? 'Admin Dashboard' : user?.role === 'ANALYST' ? 'Analyst Overview' : 'Viewer Dashboard'}
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 mt-1">
+              {user?.role === 'ADMIN' 
+                ? 'Welcome back. You have full system control.' 
+                : user?.role === 'ANALYST' 
+                ? 'Welcome back. Here are the latest insights.' 
+                : 'Welcome back. Here is your financial summary.'}
+            </p>
           </div>
           {user?.role === 'ADMIN' && (
             <button className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-medium rounded-full hover:scale-105 transition-transform">

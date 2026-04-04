@@ -2,7 +2,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUser extends Document {
   name: string;
-  email: string;
+  username?: string;
+  email?: string;
   password?: string;
   role: 'ADMIN' | 'ANALYST' | 'VIEWER';
   status: 'ACTIVE' | 'INACTIVE';
@@ -13,7 +14,8 @@ export interface IUser extends Document {
 const UserSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
+    username: { type: String, unique: true, sparse: true },
+    email: { type: String, unique: true, sparse: true },
     password: { type: String, required: true, select: false },
     role: {
       type: String,
@@ -29,4 +31,9 @@ const UserSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
+// Clear mongoose models cache during Next.js hot-reloading
+if (mongoose.models.User) {
+  delete mongoose.models.User;
+}
+
+export default mongoose.model<IUser>('User', UserSchema);

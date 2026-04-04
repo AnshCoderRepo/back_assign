@@ -10,12 +10,22 @@ export interface AuthUser {
 
 export function extractUserFromRequest(request: NextRequest): AuthUser | null {
   try {
+    let token = '';
+
     const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else {
+      const cookieToken = request.cookies.get('token')?.value;
+      if (cookieToken) {
+        token = cookieToken;
+      }
+    }
+
+    if (!token) {
       return null;
     }
 
-    const token = authHeader.substring(7);
     const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
     
     return decoded;

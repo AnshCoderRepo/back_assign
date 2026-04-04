@@ -26,13 +26,23 @@ export const GET = withApiHandler(async (request: NextRequest, { params }: { par
 export const PUT = withApiHandler(async (request: NextRequest, { params }: { params: { id: string } }) => {
   const authenticatedUser = auth.requireRoles(request, ['ADMIN']);
 
-  const { name, email, role, status, password } = await request.json();
+  const { name, identifier, role, status, password } = await request.json();
+
+  let email: string | undefined;
+  let username: string | undefined;
+
+  if (identifier) {
+    if (identifier.includes('@')) {
+      email = identifier;
+      validate.email(identifier);
+    } else {
+      username = identifier;
+      validate.username(identifier);
+    }
+  }
 
   // Validate input
   if (name) validate.required(name, 'Name');
-  if (email) {
-    validate.email(email);
-  }
   if (role) {
     validate.oneOf(role, ['ADMIN', 'ANALYST', 'VIEWER'], 'role');
   }
@@ -68,9 +78,24 @@ export const PUT = withApiHandler(async (request: NextRequest, { params }: { par
     }
   }
 
+  // Check username uniqueness if username is being changed
+  if (username && username !== existingUser.username) {
+    const usernameExists = await withDb(
+      () => User.findOne({ username: username.toLowerCase().trim(), _id: { $ne: params.id } }),
+      'Failed to check username uniqueness'
+    );
+
+    if (usernameExists) {
+      const error = new Error('Username already in use');
+      (error as any).statusCode = 409;
+      throw error;
+    }
+  }
+
   // Prepare update data
   const updateData: any = {};
   if (name) updateData.name = name.trim();
+  if (username !== undefined) updateData.username = username ? username.toLowerCase().trim() : undefined;
   if (email) updateData.email = email.toLowerCase().trim();
   if (role) updateData.role = role;
   if (status) updateData.status = status;

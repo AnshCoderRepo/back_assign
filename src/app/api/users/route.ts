@@ -31,13 +31,23 @@ export const POST = withApiHandler(async (request: NextRequest) => {
     authenticatedUser = auth.requireRoles(request, ['ADMIN']);
   }
 
-  const { name, email, password, role, status } = await request.json();
+  const { name, identifier, password, role, status } = await request.json();
 
   // Validate input
   validate.required(name, 'Name');
-  validate.required(email, 'Email');
+  validate.required(identifier, 'Email or Username');
   validate.required(password, 'Password');
-  validate.email(email);
+
+  let email: string | undefined;
+  let username: string | undefined;
+
+  if (identifier.includes('@')) {
+    email = identifier;
+    validate.email(identifier);
+  } else {
+    username = identifier;
+    validate.username(identifier);
+  }
 
   if (role) {
     validate.oneOf(role, ['ADMIN', 'ANALYST', 'VIEWER'], 'role');
@@ -47,14 +57,19 @@ export const POST = withApiHandler(async (request: NextRequest) => {
     validate.oneOf(status, ['ACTIVE', 'INACTIVE'], 'status');
   }
 
-  // Check for existing user
+  // Check for existing user by email or username
   const existingUser = await withDb(
-    () => User.findOne({ email }),
+    () => User.findOne({
+      $or: [
+        ...(email ? [{ email: email.toLowerCase().trim() }] : []),
+        ...(username ? [{ username: username.toLowerCase().trim() }] : [])
+      ]
+    }),
     'Failed to check existing user'
   );
 
   if (existingUser) {
-    throw new Error('Email already in use');
+    throw new Error(existingUser.email === email ? 'Email already in use' : 'Username already in use');
   }
 
   // Hash password
@@ -65,7 +80,8 @@ export const POST = withApiHandler(async (request: NextRequest) => {
   const newUser = await withDb(
     () => User.create({
       name: name.trim(),
-      email: email.toLowerCase().trim(),
+      ...(username ? { username: username.toLowerCase().trim() } : {}),
+      ...(email ? { email: email.toLowerCase().trim() } : {}),
       password: hashedPassword,
       role: userCount === 0 ? 'ADMIN' : (role || 'VIEWER'),
       status: status || 'ACTIVE',
@@ -76,6 +92,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
   const userResponse = {
     id: newUser._id,
     name: newUser.name,
+    username: newUser.username,
     email: newUser.email,
     role: newUser.role,
     status: newUser.status,

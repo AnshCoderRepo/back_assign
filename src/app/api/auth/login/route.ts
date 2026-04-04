@@ -3,53 +3,68 @@ import { connectToDatabase } from '@/lib/db';
 import User from '@/models/User';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { withApiHandler, apiResponse, validate, withDb, ApiError } from '@/lib/api-utils';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key_change_in_production';
 
-export async function POST(request: NextRequest) {
-  try {
-    const { email, password } = await request.json();
+export const POST = withApiHandler(async (request: NextRequest) => {
+  const body = await request.json();
+  const { email: identifier, password } = body;
 
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
-    }
+  validate.required(identifier, 'Identifier');
+  validate.required(password, 'Password');
 
-    await connectToDatabase();
+  await connectToDatabase();
 
-    const user = await User.findOne({ email }).select('+password');
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    
-    if (!isMatch) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-    }
-
-    if (user.status !== 'ACTIVE') {
-      return NextResponse.json({ error: 'User is inactive' }, { status: 403 });
-    }
-
-    const token = jwt.sign(
-      { id: user._id.toString(), role: user.role },
-      JWT_SECRET,
-      { expiresIn: '1d' }
-    );
-
-    return NextResponse.json({
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Login error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  const searchParam = identifier.toLowerCase().trim();
+  const user = await withDb(
+    () => User.findOne({
+      $or: [
+        { email: searchParam },
+        { username: searchParam }
+      ]
+    }).select('+password'),
+    'Failed to fetch user'
+  );
+  
+  if (!user) {
+    throw new ApiError(401, 'Invalid credentials');
   }
-}
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  
+  if (!isMatch) {
+    throw new ApiError(401, 'Invalid credentials');
+  }
+
+  if (user.status !== 'ACTIVE') {
+    throw new ApiError(403, 'User is inactive');
+  }
+
+  const token = jwt.sign(
+    { id: user._id.toString(), role: user.role },
+    JWT_SECRET,
+    { expiresIn: '1d' }
+  );
+
+  const response = apiResponse.success({
+    token, // Send token in body as well for clients that need it (or legacy reasons)
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    }
+  }, 'Login successful');
+
+  response.cookies.set({
+    name: 'token',
+    value: token,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 60 * 60 * 24 // 1 day
+  });
+
+  return response;
+});

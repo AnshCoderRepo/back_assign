@@ -49,12 +49,22 @@ export const apiResponse = {
 export const auth = {
   extractUser: (request: NextRequest): AuthUser | null => {
     try {
+      let token = '';
+      
       const authHeader = request.headers.get('authorization');
-      if (!authHeader?.startsWith('Bearer ')) {
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      } else {
+        const cookieToken = request.cookies.get('token')?.value;
+        if (cookieToken) {
+          token = cookieToken;
+        }
+      }
+
+      if (!token) {
         return null;
       }
 
-      const token = authHeader.substring(7);
       const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
 
       return decoded;
@@ -96,6 +106,13 @@ export const validate = {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       throw new ApiError(400, 'Invalid email format', 'VALIDATION_ERROR');
+    }
+  },
+
+  username: (username: string): void => {
+    const usernameRegex = /^[a-zA-Z0-9_.-]{3,20}$/;
+    if (!usernameRegex.test(username)) {
+      throw new ApiError(400, 'Username must be 3-20 characters long and can only contain letters, numbers, periods, dashes, and underscores.', 'VALIDATION_ERROR');
     }
   },
 
@@ -148,7 +165,7 @@ export const withApiHandler = (
       }
 
       console.error('Unhandled error:', error);
-      return apiResponse.error('Internal server error', 500, 'INTERNAL_ERROR');
+      return apiResponse.error(error instanceof Error ? error.message : 'Internal server error', 500, 'INTERNAL_ERROR');
     }
   };
 };

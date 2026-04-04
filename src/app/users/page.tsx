@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   UserIcon,
   Plus,
@@ -15,8 +16,10 @@ import {
 } from 'lucide-react';
 
 interface User {
-  _id: string;
+  _id?: string;
+  id?: string;
   name: string;
+  username?: string;
   email: string;
   role: 'ADMIN' | 'ANALYST' | 'VIEWER';
   status: 'ACTIVE' | 'INACTIVE';
@@ -24,6 +27,7 @@ interface User {
 }
 
 export default function UsersPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,13 +37,16 @@ export default function UsersPage() {
   // Form state
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    identifier: '',
     password: '',
     role: 'VIEWER' as 'ADMIN' | 'ANALYST' | 'VIEWER',
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE'
   });
 
-  const token = localStorage.getItem('token');
+  let token: string | null = null;
+  if (typeof window !== 'undefined') {
+    token = localStorage.getItem('token');
+  }
 
   useEffect(() => {
     fetchUsers();
@@ -51,9 +58,9 @@ export default function UsersPage() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data.users);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUsers(data.data);
       } else {
         setError('Failed to fetch users');
       }
@@ -75,13 +82,16 @@ export default function UsersPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          password: formData.password || 'welcome123'
+        })
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        setUsers([...users, data.user]);
+      if (res.ok && data.success) {
+        setUsers([...users, data.data]);
         setShowCreateForm(false);
         resetForm();
       } else {
@@ -101,7 +111,7 @@ export default function UsersPage() {
     try {
       const updateData = {
         name: formData.name,
-        email: formData.email,
+        identifier: formData.identifier,
         role: formData.role,
         status: formData.status,
         ...(formData.password && { password: formData.password })
@@ -118,8 +128,8 @@ export default function UsersPage() {
 
       const data = await res.json();
 
-      if (res.ok) {
-        setUsers(users.map(u => u._id === editingUser._id ? data.user : u));
+      if (res.ok && data.success) {
+        setUsers(users.map(u => (u._id || u.id) === (editingUser._id || editingUser.id) ? data.data : u));
         setEditingUser(null);
         resetForm();
       } else {
@@ -140,7 +150,7 @@ export default function UsersPage() {
       });
 
       if (res.ok) {
-        setUsers(users.filter(u => u._id !== userId));
+        setUsers(users.filter(u => (u._id || u.id) !== userId));
       } else {
         const data = await res.json();
         setError(data.error || 'Failed to delete user');
@@ -154,7 +164,7 @@ export default function UsersPage() {
     setEditingUser(user);
     setFormData({
       name: user.name,
-      email: user.email,
+      identifier: user.email || user.username || '',
       password: '',
       role: user.role,
       status: user.status
@@ -164,8 +174,8 @@ export default function UsersPage() {
   const resetForm = () => {
     setFormData({
       name: '',
-      email: '',
-      password: '',
+      identifier: '',
+      password: '', // Will fallback to default in submit if empty
       role: 'VIEWER',
       status: 'ACTIVE'
     });
@@ -204,7 +214,7 @@ export default function UsersPage() {
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => window.history.back()}
+              onClick={() => router.back()}
               className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             >
               <ArrowLeft size={20} />
@@ -215,7 +225,11 @@ export default function UsersPage() {
             </div>
           </div>
           <button
-            onClick={() => setShowCreateForm(true)}
+            onClick={() => {
+              setEditingUser(null);
+              resetForm();
+              setShowCreateForm(true);
+            }}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus size={20} />
@@ -236,7 +250,7 @@ export default function UsersPage() {
             <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">
               {editingUser ? 'Edit User' : 'Create New User'}
             </h2>
-            <form onSubmit={editingUser ? handleUpdateUser : handleCreateUser} className="space-y-4">
+            <form onSubmit={editingUser ? handleUpdateUser : handleCreateUser} className="space-y-4" autoComplete="off">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -246,19 +260,21 @@ export default function UsersPage() {
                     type="text"
                     required
                     value={formData.name}
+                    autoComplete="new-password"
                     onChange={e => setFormData({...formData, name: e.target.value})}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Email
+                    Email/Username
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={formData.email}
-                    onChange={e => setFormData({...formData, email: e.target.value})}
+                    value={formData.identifier}
+                    autoComplete="off"
+                    onChange={e => setFormData({...formData, identifier: e.target.value})}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                   />
                 </div>
@@ -268,8 +284,9 @@ export default function UsersPage() {
                   </label>
                   <input
                     type="password"
-                    required={!editingUser}
                     value={formData.password}
+                    autoComplete="new-password"
+                    placeholder={!editingUser ? "Defaults to 'welcome123'" : ""}
                     onChange={e => setFormData({...formData, password: e.target.value})}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                   />
@@ -285,7 +302,6 @@ export default function UsersPage() {
                   >
                     <option value="VIEWER">Viewer - Can only view dashboard</option>
                     <option value="ANALYST">Analyst - Can view records and insights</option>
-                    <option value="ADMIN">Admin - Full access including user management</option>
                   </select>
                 </div>
                 <div>
@@ -345,8 +361,8 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-600">
-                {users.map((user) => (
-                  <tr key={user._id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
+                {users.map((user, index) => (
+                  <tr key={user.id || user._id || index} className="hover:bg-slate-50 dark:hover:bg-slate-700">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center mr-3">
@@ -354,7 +370,7 @@ export default function UsersPage() {
                         </div>
                         <div>
                           <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {user.name}
+                            {user.name} {user.username ? `(@${user.username})` : ''}
                           </div>
                           <div className="text-sm text-slate-500 dark:text-slate-400">
                             {user.email}
@@ -391,7 +407,7 @@ export default function UsersPage() {
                           <Edit size={16} />
                         </button>
                         <button
-                          onClick={() => handleDeleteUser(user._id)}
+                          onClick={() => handleDeleteUser(user._id || user.id || '')}
                           className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
                           title="Delete user"
                         >
