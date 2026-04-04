@@ -6,7 +6,7 @@ import { extractUserFromRequest, checkRole } from '@/middleware/auth';
 export async function GET(request: NextRequest) {
   try {
     const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN', 'ANALYST'])) {
+    if (!checkRole(authUser, ['ADMIN', 'ANALYST', 'VIEWER'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

@@ -1,105 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/db';
-import Record from '@/models/Record';
-import { extractUserFromRequest, checkRole } from '@/middleware/auth';
+import { auth, validate, withApiHandler, apiResponse } from '@/lib/api-utils';
+import { RecordService } from '@/lib/services';
 
-export async function POST(request: NextRequest) {
-  try {
-    const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN'])) {
-      return NextResponse.json({ error: 'Forbidden. Admin access required' }, { status: 403 });
-    }
+export const POST = withApiHandler(async (request: NextRequest) => {
+  const user = auth.requireRoles(request, ['ADMIN']);
 
-    const { amount, type, category, date, description } = await request.json();
+  const { amount, type, category, date, description } = await request.json();
 
-    if (!amount || amount <= 0) {
-      return NextResponse.json({ error: 'Valid amount is required' }, { status: 400 });
-    }
+  // Validate input
+  validate.positiveNumber(amount, 'amount');
+  validate.required(type, 'type');
+  validate.oneOf(type, ['INCOME', 'EXPENSE'], 'type');
+  validate.required(category, 'category');
 
-    if (!type || !['INCOME', 'EXPENSE'].includes(type)) {
-      return NextResponse.json({ error: 'Valid type (INCOME/EXPENSE) is required' }, { status: 400 });
-    }
+  const record = await RecordService.createRecord({
+    amount,
+    type,
+    category,
+    date,
+    description
+  }, user.id);
 
-    if (!category) {
-      return NextResponse.json({ error: 'Category is required' }, { status: 400 });
-    }
+  return apiResponse.success(record, 'Record created successfully');
+});
 
-    await connectToDatabase();
+export const GET = withApiHandler(async (request: NextRequest) => {
+  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST', 'VIEWER']);
 
-    const record = new Record({
-      amount,
-      type,
-      category,
-      date: date ? new Date(date) : new Date(),
-      description,
-      createdBy: authUser?.id
-    });
+  const { searchParams } = new URL(request.url);
+  const filters = {
+    type: searchParams.get('type') as 'INCOME' | 'EXPENSE' | undefined,
+    category: searchParams.get('category') || undefined,
+    startDate: searchParams.get('startDate') || undefined,
+    endDate: searchParams.get('endDate') || undefined,
+    search: searchParams.get('search') || undefined,
+    page: parseInt(searchParams.get('page') || '1'),
+    limit: parseInt(searchParams.get('limit') || '10')
+  };
 
-    await record.save();
+  // Validate pagination
+  if (filters.page < 1) filters.page = 1;
+  if (filters.limit < 1 || filters.limit > 100) filters.limit = 10;
 
-    return NextResponse.json({ message: 'Record created successfully', record }, { status: 201 });
-  } catch (error: any) {
-    console.error('Create record error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+  const result = await RecordService.getRecords(filters);
 
-export async function GET(request: NextRequest) {
-  try {
-    const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN', 'ANALYST', 'VIEWER'])) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type');
-    const category = searchParams.get('category');
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
-
-    const query: any = {};
-
-    if (type) query.type = type;
-    if (category) query.category = category;
-    
-    if (startDate || endDate) {
-      query.date = {};
-      if (startDate) query.date.$gte = new Date(startDate);
-      if (endDate) query.date.$lte = new Date(endDate);
-    }
-
-    if (search) {
-      query.description = { $regex: search, $options: 'i' };
-    }
-
-    await connectToDatabase();
-
-    const skip = (page - 1) * limit;
-
-    const [records, total] = await Promise.all([
-      Record.find(query)
-        .sort({ date: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate('createdBy', 'name email'),
-      Record.countDocuments(query)
-    ]);
-
-    return NextResponse.json({ 
-      records,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Fetch records error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+  return apiResponse.success(result, 'Records retrieved successfully');
+});

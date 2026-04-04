@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/db';
-import Record from '@/models/Record';
-import { extractUserFromRequest, checkRole } from '@/middleware/auth';
+import { auth, withApiHandler, apiResponse } from '@/lib/api-utils';
+import { RecordService } from '@/lib/services';
 
-export async function GET(request: NextRequest) {
-  try {
-    const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN', 'ANALYST'])) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+export const GET = withApiHandler(async (request: NextRequest) => {
+  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST', 'VIEWER']);
 
-    await connectToDatabase();
+  const recentRecords = await RecordService.getRecentRecords(5);
 
-    const recentRecords = await Record.find()
-      .sort({ date: -1, createdAt: -1 })
-      .limit(5)
-      .populate('createdBy', 'name email');
-
-    return NextResponse.json({ recentRecords });
-  } catch (error: any) {
-    console.error('Fetch recent records error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+  return apiResponse.success({ recentRecords }, 'Recent records retrieved successfully');
+});

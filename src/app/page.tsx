@@ -24,6 +24,14 @@ export default function FinanceApp() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // Registration state
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerSuccess, setRegisterSuccess] = useState('');
+
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
@@ -82,6 +90,36 @@ export default function FinanceApp() {
     }
   };
 
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegisterError('');
+    setRegisterSuccess('');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: registerName, 
+          email: registerEmail, 
+          password: registerPassword 
+        })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setRegisterSuccess('Account created successfully! You can now login.');
+        setIsRegistering(false);
+        setRegisterName('');
+        setRegisterEmail('');
+        setRegisterPassword('');
+      } else {
+        setRegisterError(data.error || 'Registration failed');
+      }
+    } catch (error) {
+      setRegisterError('Server error');
+    }
+  };
+
   const handleLogout = () => {
     setToken(null);
     setUser(null);
@@ -103,43 +141,125 @@ export default function FinanceApp() {
             <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Finance Portal</h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Secure access to your data</p>
           </div>
-          <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-            {loginError && (
-              <div className="p-3 text-sm text-red-500 bg-red-100/50 rounded-xl text-center">
-                {loginError}
-              </div>
-            )}
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
-                  placeholder="admin@example.com"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
+
+          {/* Tab buttons */}
+          <div className="flex rounded-xl bg-slate-100 dark:bg-slate-700 p-1">
             <button
-              type="submit"
-              className="w-full py-3.5 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-600/30 active:scale-[0.98]"
+              onClick={() => setIsRegistering(false)}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                !isRegistering 
+                  ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm' 
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
             >
               Sign In
             </button>
-          </form>
+            <button
+              onClick={() => setIsRegistering(true)}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                isRegistering 
+                  ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm' 
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          {!isRegistering ? (
+            <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+              {loginError && (
+                <div className="p-3 text-sm text-red-500 bg-red-100/50 rounded-xl text-center">
+                  {loginError}
+                </div>
+              )}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
+                    placeholder="admin@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full py-3.5 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-600/30 active:scale-[0.98]"
+              >
+                Sign In
+              </button>
+            </form>
+          ) : (
+            <form className="mt-8 space-y-6" onSubmit={handleRegister}>
+              {registerError && (
+                <div className="p-3 text-sm text-red-500 bg-red-100/50 rounded-xl text-center">
+                  {registerError}
+                </div>
+              )}
+              {registerSuccess && (
+                <div className="p-3 text-sm text-green-600 bg-green-100/50 rounded-xl text-center">
+                  {registerSuccess}
+                </div>
+              )}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={registerName}
+                    onChange={e => setRegisterName(e.target.value)}
+                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
+                    placeholder="John Doe"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={registerEmail}
+                    onChange={e => setRegisterEmail(e.target.value)}
+                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
+                    placeholder="admin@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={registerPassword}
+                    onChange={e => setRegisterPassword(e.target.value)}
+                    className="w-full px-4 py-3 mt-1 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white/50 dark:bg-slate-900/50 outline-none transition-all"
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full py-3.5 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-600/30 active:scale-[0.98]"
+              >
+                Create Account
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );
@@ -166,7 +286,7 @@ export default function FinanceApp() {
             Transactions
           </a>
           {user?.role === 'ADMIN' && (
-            <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <a href="/users" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <UserIcon size={20} />
               Users Setup
             </a>

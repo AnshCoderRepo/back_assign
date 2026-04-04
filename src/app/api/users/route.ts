@@ -2,66 +2,89 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import User from '@/models/User';
 import bcrypt from 'bcrypt';
-import { extractUserFromRequest, checkRole } from '@/middleware/auth';
+import { auth, validate, withDb, withApiHandler, apiResponse } from '@/lib/api-utils';
 
-export async function POST(request: NextRequest) {
-  try {
-    const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN'])) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+export const GET = withApiHandler(async (request: NextRequest) => {
+  const user = auth.requireRoles(request, ['ADMIN']);
 
-    const { name, email, password, role, status } = await request.json();
+  await connectToDatabase();
 
-    if (!name || !email || !password) {
-      return NextResponse.json({ error: 'Name, email, and password are required' }, { status: 400 });
-    }
+  const users = await withDb(
+    () => User.find().select('-password').sort({ createdAt: -1 }),
+    'Failed to fetch users'
+  );
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
-    }
+  return apiResponse.success(users, 'Users retrieved successfully');
+});
 
-    await connectToDatabase();
+export const POST = withApiHandler(async (request: NextRequest) => {
+  await connectToDatabase();
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return NextResponse.json({ error: 'Email already in use' }, { status: 400 });
-    }
+  // Check if any users exist for first user creation
+  const userCount = await withDb(
+    () => User.countDocuments(),
+    'Failed to check user count'
+  );
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+  let authenticatedUser: any = null;
+  if (userCount > 0) {
+    authenticatedUser = auth.requireRoles(request, ['ADMIN']);
+  }
 
-    const user = new User({
-      name,
-      email,
+  const { name, email, password, role, status } = await request.json();
+
+  // Validate input
+  validate.required(name, 'Name');
+  validate.required(email, 'Email');
+  validate.required(password, 'Password');
+  validate.email(email);
+
+  if (role) {
+    validate.oneOf(role, ['ADMIN', 'ANALYST', 'VIEWER'], 'role');
+  }
+
+  if (status) {
+    validate.oneOf(status, ['ACTIVE', 'INACTIVE'], 'status');
+  }
+
+  // Check for existing user
+  const existingUser = await withDb(
+    () => User.findOne({ email }),
+    'Failed to check existing user'
+  );
+
+  if (existingUser) {
+    throw new Error('Email already in use');
+  }
+
+  // Hash password
+  const saltRounds = 10;
+  const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+  // Create user
+  const newUser = await withDb(
+    () => User.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
-      role: role || 'VIEWER',
+      role: userCount === 0 ? 'ADMIN' : (role || 'VIEWER'),
       status: status || 'ACTIVE',
-    });
+    }),
+    'Failed to create user'
+  );
 
-    await user.save();
+  const userResponse = {
+    id: newUser._id,
+    name: newUser.name,
+    email: newUser.email,
+    role: newUser.role,
+    status: newUser.status,
+    createdAt: newUser.createdAt,
+  };
 
-    return NextResponse.json({ message: 'User created successfully', user: { id: user._id, name: user.name, email: user.email, role: user.role } }, { status: 201 });
-  } catch (error: any) {
-    console.error('Create user error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+  const message = userCount === 0
+    ? 'First admin user created successfully'
+    : 'User created successfully';
 
-export async function GET(request: NextRequest) {
-  try {
-    const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN'])) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    await connectToDatabase();
-    const users = await User.find().select('-password');
-    
-    return NextResponse.json({ users });
-  } catch (error: any) {
-    console.error('Fetch users error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+  return apiResponse.success(userResponse, message);
+});
