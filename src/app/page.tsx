@@ -18,8 +18,9 @@ export default function FinanceApp() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  const [summary, setSummary] = useState({ totalIncome: 0, totalExpense: 0, balance: 0 });
+  const [summary, setSummary] = useState<any>({ totalIncome: 0, totalExpense: 0, balance: 0, categoryTotals: [], monthlyTrends: [] });
   const [recentRecords, setRecentRecords] = useState([]);
+  const [selectedRecord, setSelectedRecord] = useState<any>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -58,16 +59,18 @@ export default function FinanceApp() {
   const fetchDashboardData = async () => {
     try {
       const sumRes = await fetch('/api/dashboard/summary', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store'
       });
       const sumData = await sumRes.json();
-      if (sumData.summary) setSummary(sumData.summary);
+      if (sumData.success && sumData.data?.summary) setSummary(sumData.data.summary);
 
       const recRes = await fetch('/api/dashboard/recent', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store'
       });
       const recData = await recRes.json();
-      if (recData.recentRecords) setRecentRecords(recData.recentRecords);
+      if (recData.success && recData.data?.recentRecords) setRecentRecords(recData.data.recentRecords);
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
     }
@@ -200,11 +203,11 @@ export default function FinanceApp() {
             <LayoutDashboard size={20} />
             Dashboard
           </a>
-          {user?.role !== 'VIEWER' && (
-            <a href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          {(user?.role === 'ADMIN' || user?.role === 'ANALYST') && (
+            <Link href="/transactions" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <Wallet size={20} />
               Transactions
-            </a>
+            </Link>
           )}
           {user?.role === 'ADMIN' && (
             <Link href="/users" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -250,10 +253,10 @@ export default function FinanceApp() {
             </p>
           </div>
           {user?.role === 'ADMIN' && (
-            <button className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-medium rounded-full hover:scale-105 transition-transform">
+            <Link href="/transactions" className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-medium rounded-full hover:scale-105 transition-transform">
               <Plus size={18} />
               New Record
-            </button>
+            </Link>
           )}
         </header>
 
@@ -288,6 +291,66 @@ export default function FinanceApp() {
           </div>
         </div>
 
+        {/* Analytics Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          
+          {/* Category Breakdown */}
+          <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl p-6 shadow-sm">
+            <h2 className="text-lg font-bold mb-5 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+              Top Expense Categories
+            </h2>
+            <div className="space-y-5">
+              {summary.categoryTotals?.filter((c: any) => c.type === 'EXPENSE').map((cat: any, i: number) => (
+                <div key={i}>
+                  <div className="flex justify-between text-sm mb-1.5">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">{cat.category}</span>
+                    <span className="text-slate-600 dark:text-slate-400 font-bold">${cat.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-rose-500 h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min((cat.total / (summary.totalExpense || 1)) * 100, 100)}%` }}></div>
+                  </div>
+                </div>
+              ))}
+              {(!summary.categoryTotals || summary.categoryTotals.filter((c: any) => c.type === 'EXPENSE').length === 0) && (
+                <p className="text-sm text-slate-500">No expenses recorded yet.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Time Series Trends */}
+           <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl p-6 shadow-sm overflow-hidden text-sm">
+            <h2 className="text-lg font-bold mb-5 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+              Monthly Activity (6-Month Trend)
+            </h2>
+            <div className="space-y-3">
+              {summary.monthlyTrends?.map((trend: any, i: number) => {
+                const monthName = new Date(trend.year, trend.month - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+                const isIncome = trend.type === 'INCOME';
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-14 text-xs font-semibold uppercase text-slate-400">{monthName}</div>
+                    <div className="flex-1">
+                      <div 
+                        className={`h-7 rounded-lg ${isIncome ? 'bg-emerald-500/20' : 'bg-rose-500/20'} flex items-center px-3`}
+                        style={{ width: `${Math.max(15, Math.min((trend.total / (isIncome ? (summary.totalIncome || 1) : (summary.totalExpense || 1))) * 100, 100))}%` }}
+                      >
+                         <span className={`text-xs font-bold ${isIncome ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>
+                           {isIncome ? '+' : '-'}${trend.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                         </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {(!summary.monthlyTrends || summary.monthlyTrends.length === 0) && (
+                <p className="text-sm text-slate-500">No historical trends available.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Recent Transactions */}
         <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm">
           <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
@@ -313,7 +376,11 @@ export default function FinanceApp() {
                   </tr>
                 ) : (
                   recentRecords.map((record: any) => (
-                    <tr key={record._id} className="border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                    <tr 
+                      key={record._id} 
+                      onClick={() => user?.role !== 'VIEWER' && setSelectedRecord(record)}
+                      className={`border-b border-slate-50 dark:border-slate-700/50 transition-colors ${user?.role !== 'VIEWER' ? 'hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer' : ''}`}
+                    >
                       <td className="p-4 font-medium text-slate-700 dark:text-slate-200">
                         {record.description || 'N/A'}
                       </td>
@@ -336,6 +403,55 @@ export default function FinanceApp() {
           </div>
         </div>
       </main>
+
+      {/* Transaction Summary Modal */}
+      {selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative">
+            <h3 className="text-xl font-bold mb-4">Transaction Summary</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Type</p>
+                <p className={`font-semibold ${selectedRecord.type === 'INCOME' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {selectedRecord.type}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Amount</p>
+                <p className="text-xl font-bold">${selectedRecord.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Category</p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">{selectedRecord.category}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Date</p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">
+                  {new Date(selectedRecord.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Description / Notes</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300">{selectedRecord.description || 'No description provided'}</p>
+              </div>
+              {selectedRecord.createdBy && (
+                <div>
+                  <p className="text-xs text-slate-500 font-medium">Recorded By</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300">{selectedRecord.createdBy.name || 'Admin'} ({selectedRecord.createdBy.email || 'N/A'})</p>
+                </div>
+              )}
+            </div>
+            <div className="mt-6">
+              <button 
+                onClick={() => setSelectedRecord(null)}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

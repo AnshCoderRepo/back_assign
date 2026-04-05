@@ -126,6 +126,13 @@ export const validate = {
     if (typeof value !== 'number' || value <= 0) {
       throw new ApiError(400, `${fieldName} must be a positive number`, 'VALIDATION_ERROR');
     }
+  },
+
+  objectId: (id: string, fieldName: string = 'ID'): void => {
+    const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+    if (!objectIdRegex.test(id)) {
+      throw new ApiError(400, `Invalid ${fieldName} format`, 'VALIDATION_ERROR');
+    }
   }
 };
 
@@ -152,12 +159,37 @@ export const withDb = async <T>(
   }
 };
 
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const requireRateLimit = (ip: string): boolean => {
+  const WINDOW_MS = 60 * 1000; // 1 minute
+  const MAX_REQUESTS = 60; // 60 requests per minute
+  const now = Date.now();
+
+  const record = rateLimitMap.get(ip);
+  if (!record || record.resetTime < now) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + WINDOW_MS });
+    return true;
+  }
+
+  if (record.count >= MAX_REQUESTS) {
+    return false;
+  }
+
+  record.count += 1;
+  return true;
+};
+
 // API route wrapper for consistent error handling
 export const withApiHandler = (
   handler: (request: NextRequest, context?: any) => Promise<NextResponse>
 ) => {
   return async (request: NextRequest, context?: any): Promise<NextResponse> => {
     try {
+      const ip = (request as any).ip || request.headers.get('x-forwarded-for') || '127.0.0.1';
+      if (!requireRateLimit(ip)) {
+        throw new ApiError(429, 'Too many requests. Please try again later.', 'RATE_LIMIT_EXCEEDED');
+      }
+
       return await handler(request, context);
     } catch (error) {
       if (error instanceof ApiError) {

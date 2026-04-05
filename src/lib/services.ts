@@ -268,7 +268,7 @@ export class RecordService {
       limit = 10
     } = filters;
 
-    const query: any = {};
+    const query: any = { isDeleted: { $ne: true } };
 
     if (type) query.type = type;
     if (category) query.category = category;
@@ -311,11 +311,16 @@ export class RecordService {
     };
   }
 
-  static async getDashboardSummary() {
+  static async getDashboardSummary(user: { id: string; role: string }) {
     await connectToDatabase();
+    const mongoose = require('mongoose');
+
+    const matchQuery: any = { isDeleted: { $ne: true } };
+
 
     const summary = await withDb(
       () => Record.aggregate([
+        { $match: matchQuery },
         {
           $group: {
             _id: '$type',
@@ -334,18 +339,75 @@ export class RecordService {
       if (item._id === 'EXPENSE') totalExpense = item.total;
     });
 
+    // 2. Category wise totals
+    const categoryTotals = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: { type: '$type', category: '$category' },
+            total: { $sum: '$amount' }
+          }
+        },
+        { $sort: { total: -1 } }
+      ]),
+      'Failed to fetch category totals'
+    );
+
+    const categories = categoryTotals.map((item: any) => ({
+      type: item._id.type,
+      category: item._id.category,
+      total: item.total
+    }));
+
+    // 3. Monthly trends 
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    sixMonthsAgo.setDate(1);
+
+    const trendsQuery = { ...matchQuery, date: { $gte: sixMonthsAgo } };
+    
+    const monthlyTrends = await withDb(
+      () => Record.aggregate([
+        { $match: trendsQuery },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$date' },
+              month: { $month: '$date' },
+              type: '$type'
+            },
+            total: { $sum: '$amount' }
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1 } }
+      ]),
+      'Failed to fetch trends'
+    );
+
+    const formattedTrends = monthlyTrends.map((item: any) => ({
+      year: item._id.year,
+      month: item._id.month,
+      type: item._id.type,
+      total: item.total
+    }));
+
     return {
       totalIncome,
       totalExpense,
-      balance: totalIncome - totalExpense
+      balance: totalIncome - totalExpense,
+      categoryTotals: categories,
+      monthlyTrends: formattedTrends
     };
   }
 
-  static async getRecentRecords(limit = 5) {
+  static async getRecentRecords(user: { id: string; role: string }, limit = 5) {
     await connectToDatabase();
 
+    const query: any = { isDeleted: { $ne: true } };
+
     return withDb(
-      () => Record.find()
+      () => Record.find(query)
         .sort({ date: -1, createdAt: -1 })
         .limit(limit)
         .populate('createdBy', 'name email'),

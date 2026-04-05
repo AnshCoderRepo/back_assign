@@ -25,7 +25,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
 });
 
 export const GET = withApiHandler(async (request: NextRequest) => {
-  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST']);
+  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST', 'VIEWER']);
 
   const { searchParams } = new URL(request.url);
   const filters = {

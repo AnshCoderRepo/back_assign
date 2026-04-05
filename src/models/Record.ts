@@ -6,6 +6,7 @@ export interface IRecord extends Document {
   category: string;
   date: Date;
   description?: string;
+  isDeleted?: boolean;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -18,6 +19,7 @@ const RecordSchema: Schema = new Schema(
     category: { type: String, required: true },
     date: { type: Date, required: true, default: Date.now },
     description: { type: String },
+    isDeleted: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }
