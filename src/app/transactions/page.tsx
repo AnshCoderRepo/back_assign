@@ -12,7 +12,8 @@ import {
   Plus,
   Trash2,
   Edit2,
-  BarChart3
+  BarChart3,
+  Filter
 } from 'lucide-react';
 
 export default function TransactionsPage() {
@@ -32,6 +33,14 @@ export default function TransactionsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Filters
+  const [filterType, setFilterType] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [categories, setCategories] = useState<string[]>([]);
   
   // Form State
   const [amount, setAmount] = useState('');
@@ -68,14 +77,38 @@ export default function TransactionsPage() {
       fetchRecords();
     }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [token, page, searchTerm, limit]);
+  }, [token, page, searchTerm, limit, filterType, filterCategory, filterStartDate, filterEndDate]);
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCategories(data.data.categories);
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories', error);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchCategories();
+    }
+  }, [token]);
 
   const fetchRecords = async () => {
     try {
       const queryParams = new URLSearchParams({
         page: page.toString(),
         limit: limit.toString(),
-        ...(searchTerm && { search: searchTerm })
+        ...(searchTerm && { search: searchTerm }),
+        ...(filterType && { type: filterType }),
+        ...(filterCategory && { category: filterCategory }),
+        ...(filterStartDate && { startDate: filterStartDate }),
+        ...(filterEndDate && { endDate: filterEndDate })
       });
 
       const res = await fetch(`/api/records?${queryParams.toString()}`, {
@@ -250,13 +283,95 @@ export default function TransactionsPage() {
           </header>
 
           <div className="flex flex-col gap-4 mt-2 sm:flex-row sm:items-center sm:justify-between">
-            <input 
-              type="text" 
-              placeholder="Search by description or notes..." 
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-              className="w-full max-w-md px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-            />
+            <div className="flex flex-col gap-4 w-full">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium rounded-xl transition-colors"
+                >
+                  <Filter size={16} />
+                  Filters
+                  {(filterType || filterCategory || filterStartDate || filterEndDate) && (
+                    <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+                  )}
+                </button>
+                {(filterType || filterCategory || filterStartDate || filterEndDate) && (
+                  <button
+                    onClick={() => {
+                      setFilterType('');
+                      setFilterCategory('');
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                      setPage(1);
+                    }}
+                    className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+              
+              {showFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Type</label>
+                    <select
+                      value={filterType}
+                      onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Types</option>
+                      <option value="INCOME">Income</option>
+                      <option value="EXPENSE">Expense</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Category</label>
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Categories</option>
+                      {categories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Date</label>
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => { setFilterStartDate(e.target.value); setPage(1); }}
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Date</label>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => { setFilterEndDate(e.target.value); setPage(1); }}
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              <input 
+                type="text" 
+                placeholder="Search by description or notes..." 
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+                className="w-full max-w-md px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+              />
+            </div>
             <div className="flex items-center gap-3">
               <label className="text-sm text-slate-500 dark:text-slate-400">Rows per page</label>
               <select

@@ -11,7 +11,8 @@ import {
   PieChart,
   Plus,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Filter
 } from 'lucide-react';
 
 interface AnalyticsData {
@@ -41,10 +42,37 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState('month');
+  
+  // Filters
+  const [filterType, setFilterType] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
     void fetchAnalytics();
-  }, [period]);
+  }, [period, filterType, filterCategory]);
+
+  const fetchCategories = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const res = await fetch('/api/categories', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCategories(data.data.categories);
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   const fetchAnalytics = async () => {
     setLoading(true);
@@ -56,7 +84,13 @@ export default function AnalyticsPage() {
         return;
       }
 
-      const response = await fetch(`/api/dashboard/analytics?period=${period}`, {
+      const queryParams = new URLSearchParams({
+        period,
+        ...(filterType && { type: filterType }),
+        ...(filterCategory && { category: filterCategory })
+      });
+
+      const response = await fetch(`/api/dashboard/analytics?${queryParams.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -149,16 +183,75 @@ export default function AnalyticsPage() {
               <p className="text-slate-600 dark:text-slate-400 mt-2">{analytics.dateRange.start} to {analytics.dateRange.end}</p>
             </div>
           </div>
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-          >
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-            <option value="quarter">This Quarter</option>
-            <option value="year">This Year</option>
-          </select>
+          <div className="flex flex-col gap-4">
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+            >
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="quarter">This Quarter</option>
+              <option value="year">This Year</option>
+            </select>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium rounded-xl transition-colors"
+              >
+                <Filter size={16} />
+                Filters
+                {(filterType || filterCategory) && (
+                  <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+                )}
+              </button>
+              {(filterType || filterCategory) && (
+                <button
+                  onClick={() => {
+                    setFilterType('');
+                    setFilterCategory('');
+                  }}
+                  className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            
+            {showFilters && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Type</label>
+                  <select
+                    value={filterType}
+                    onChange={(e) => setFilterType(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Types</option>
+                    <option value="INCOME">Income</option>
+                    <option value="EXPENSE">Expense</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Category</label>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Categories</option>
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">

@@ -28,7 +28,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
 });
 
 export const GET = withApiHandler(async (request: NextRequest) => {
-  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST', 'VIEWER']);
+  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST']);
 
   const { searchParams } = new URL(request.url);
   const parsePositiveInt = (value: string | null, fallback: number) => {

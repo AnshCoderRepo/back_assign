@@ -753,4 +753,20 @@ export class RecordService {
       'Failed to fetch recent records'
     );
   }
+
+  static async getCategories(user: { id: string; role: string }, type?: 'INCOME' | 'EXPENSE') {
+    await connectToDatabase();
+
+    const matchQuery: any = { isDeleted: { $ne: true } };
+    if (type) {
+      matchQuery.type = type;
+    }
+
+    const categories = await withDb(
+      () => Record.distinct('category', matchQuery).sort(),
+      'Failed to fetch categories'
+    );
+
+    return categories;
+  }
 }
