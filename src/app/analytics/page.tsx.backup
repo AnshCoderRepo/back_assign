@@ -1,0 +1,397 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import {
+  ArrowLeft,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  Calendar,
+  DollarSign,
+  Activity,
+  PieChart
+} from 'lucide-react';
+
+interface AnalyticsData {
+  period: string;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+  filters: {
+    category?: string;
+    type?: string;
+  };
+  summary: {
+    totalTransactions: number;
+    totalAmount: number;
+    categoriesCount: number;
+    avgTransactionAmount: number;
+  };
+  charts: {
+    dailyTrends: Array<{
+      date: string;
+      type: string;
+      amount: number;
+      count: number;
+    }>;
+    categoryDistribution: Array<{
+      type: string;
+      category: string;
+      amount: number;
+      count: number;
+      percentage: number;
+    }>;
+    hourlyPatterns: Array<{
+      hour: number;
+      type: string;
+      amount: number;
+      count: number;
+    }>;
+    amountRanges: Array<{
+      range: string;
+      count: number;
+      amount: number;
+      types: string[];
+    }>;
+    topCategories: Array<{
+      type: string;
+      category: string;
+      amount: number;
+      count: number;
+      avgAmount: number;
+    }>;
+    periodComparison: {
+      current: Record<string, { amount: number; count: number }>;
+      previous: Record<string, { amount: number; count: number }>;
+    };
+  };
+}
+
+export default function AnalyticsPage() {
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState('month');
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [period]);
+
+  const fetchAnalytics = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('No authentication token found. Please log in first.');
+        return;
+      }
+
+      const response = await fetch(`/api/dashboard/analytics?period=${period}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch analytics: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        setAnalytics(data.data.analytics);
+      } else {
+        throw new Error(data.error || 'Invalid response format');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <Activity className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-slate-600 dark:text-slate-400">Loading analytics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <ArrowLeft size={16} />
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <BarChart3 className="w-16 h-16 mx-auto mb-4 text-slate-400" />
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">No Analytics Data</h2>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">
+            No transaction data available for analytics. Start by adding some transactions to see insights.
+          </p>
+          <Link
+            href="/transactions"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mr-4"
+          >
+            <Plus size={16} />
+            Add Transaction
+          </Link>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+          >
+            <ArrowLeft size={16} />
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
+  };
+
+  const getPeriodComparison = (type: string) => {
+    const current = analytics.charts.periodComparison.current[type]?.amount || 0;
+    const previous = analytics.charts.periodComparison.previous[type]?.amount || 0;
+    const change = previous > 0 ? ((current - previous) / previous) * 100 : 0;
+    return { current, previous, change };
+  };
+
+  // Check if analytics data is empty
+  const hasData = analytics.summary.totalTransactions > 0;
+
+  if (!hasData) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              >
+                <ArrowLeft size={20} />
+              </Link>
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+                  <BarChart3 size={32} />
+                  Analytics Dashboard
+                </h1>
+                <p className="text-slate-600 dark:text-slate-400 mt-1">
+                  {analytics.dateRange.start} to {analytics.dateRange.end}
+                </p>
+              </div>
+            </div>
+
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+            >
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="quarter">This Quarter</option>
+              <option value="year">This Year</option>
+            </select>
+          </div>
+
+          {/* Empty State */}
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-12 text-center shadow-sm">
+            <BarChart3 className="w-24 h-24 mx-auto mb-6 text-slate-300 dark:text-slate-600" />
+            <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-4">No Data Available</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md mx-auto">
+              There are no transactions for the selected period ({period}). Try selecting a different time period or add some transactions to see analytics.
+            </p>
+            <div className="flex justify-center gap-4">
+              <Link
+                href="/transactions"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <Plus size={18} />
+                Add Transaction
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors font-medium"
+              >
+                <ArrowLeft size={18} />
+                Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">Total Transactions</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {analytics.summary.totalTransactions}
+                </p>
+              </div>
+              <Activity className="w-8 h-8 text-blue-600" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">Total Amount</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {formatCurrency(analytics.summary.totalAmount)}
+                </p>
+              </div>
+              <DollarSign className="w-8 h-8 text-green-600" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">Categories</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {analytics.summary.categoriesCount}
+                </p>
+              </div>
+              <PieChart className="w-8 h-8 text-purple-600" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">Avg Transaction</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {formatCurrency(analytics.summary.avgTransactionAmount)}
+                </p>
+              </div>
+              <Calendar className="w-8 h-8 text-orange-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Period Comparison */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {['INCOME', 'EXPENSE'].map((type) => {
+            const comparison = getPeriodComparison(type);
+            const isPositive = comparison.change > 0;
+            return (
+              <div key={type} className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 capitalize">
+                  {type.toLowerCase()} Comparison
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 dark:text-slate-400">Current Period</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {formatCurrency(comparison.current)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 dark:text-slate-400">Previous Period</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {formatCurrency(comparison.previous)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <span className="text-slate-600 dark:text-slate-400">Change</span>
+                    <div className={`flex items-center gap-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                      {isPositive ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                      <span className="font-semibold">
+                        {Math.abs(comparison.change).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Top Categories */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm mb-8">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
+            Top Categories
+          </h3>
+          <div className="space-y-4">
+            {analytics.charts.topCategories.slice(0, 10).map((category, index) => (
+              <div key={`${category.type}-${category.category}`} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                <div className="flex items-center gap-4">
+                  <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">{category.category}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 capitalize">{category.type.toLowerCase()}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(category.amount)}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{category.count} transactions</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Category Distribution */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
+            Category Distribution
+          </h3>
+          <div className="space-y-4">
+            {analytics.charts.categoryDistribution.map((item) => (
+              <div key={`${item.type}-${item.category}`} className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm font-medium text-slate-900 dark:text-white">{item.category}</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {formatCurrency(item.amount)} ({item.percentage}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full ${item.type === 'INCOME' ? 'bg-green-500' : 'bg-red-500'}`}
+                      style={{ width: `${item.percentage}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

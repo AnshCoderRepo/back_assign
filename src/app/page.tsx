@@ -10,7 +10,8 @@ import {
   LogOut,
   User as UserIcon,
   Activity,
-  Plus
+  Plus,
+  BarChart3
 } from 'lucide-react';
 
 export default function FinanceApp() {
@@ -203,6 +204,10 @@ export default function FinanceApp() {
             <LayoutDashboard size={20} />
             Dashboard
           </a>
+          <Link href="/analytics" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <BarChart3 size={20} />
+            Analytics
+          </Link>
           {(user?.role === 'ADMIN' || user?.role === 'ANALYST') && (
             <Link href="/transactions" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <Wallet size={20} />
@@ -252,12 +257,6 @@ export default function FinanceApp() {
                 : 'Welcome back. Here is your financial summary.'}
             </p>
           </div>
-          {user?.role === 'ADMIN' && (
-            <Link href="/transactions" className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-medium rounded-full hover:scale-105 transition-transform">
-              <Plus size={18} />
-              New Record
-            </Link>
-          )}
         </header>
 
         {/* KPI Cards */}
@@ -290,6 +289,30 @@ export default function FinanceApp() {
             </h3>
           </div>
         </div>
+
+        {/* Getting Started - Show when no data */}
+        {summary.totalIncome + summary.totalExpense === 0 && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 border border-blue-200 dark:border-blue-800 rounded-3xl p-8 mb-8 text-center">
+            <div className="max-w-md mx-auto">
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Plus className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Welcome to Finova!</h2>
+              <p className="text-slate-600 dark:text-slate-400 mb-6">
+                Get started by adding your first transaction. Track income, expenses, and gain insights into your financial data.
+              </p>
+              {user?.role === 'ADMIN' && (
+                <Link
+                  href="/transactions"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium shadow-lg shadow-blue-600/30"
+                >
+                  <Plus size={18} />
+                  Add Your First Transaction
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Analytics Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -355,7 +378,7 @@ export default function FinanceApp() {
         <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm">
           <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
             <h2 className="text-lg font-bold">Recent Transactions</h2>
-            <button className="text-blue-600 font-medium text-sm hover:underline">View All</button>
+            <Link href="/transactions" className="text-blue-600 font-medium text-sm hover:underline">View All</Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">

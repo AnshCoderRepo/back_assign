@@ -4,13 +4,18 @@ import User from '@/models/User';
 import bcrypt from 'bcrypt';
 import { auth, validate, withDb, withApiHandler, apiResponse } from '@/lib/api-utils';
 
-export const GET = withApiHandler(async (request: NextRequest, { params }: { params: { id: string } }) => {
+export const GET = withApiHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const authenticatedUser = auth.requireRoles(request, ['ADMIN']);
+
+  const { id } = await params;
+
+  // Validate ID
+  validate.objectId(id, 'User ID');
 
   await connectToDatabase();
 
   const user = await withDb(
-    () => User.findById(params.id).select('-password'),
+    () => User.findById(id).select('-password'),
     'Failed to fetch user'
   );
 
@@ -23,8 +28,13 @@ export const GET = withApiHandler(async (request: NextRequest, { params }: { par
   return apiResponse.success(user, 'User retrieved successfully');
 });
 
-export const PUT = withApiHandler(async (request: NextRequest, { params }: { params: { id: string } }) => {
+export const PUT = withApiHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const authenticatedUser = auth.requireRoles(request, ['ADMIN']);
+
+  const { id } = await params;
+
+  // Validate ID
+  validate.objectId(id, 'User ID');
 
   const { name, identifier, role, status, password } = await request.json();
 
@@ -43,6 +53,9 @@ export const PUT = withApiHandler(async (request: NextRequest, { params }: { par
 
   // Validate input
   if (name) validate.required(name, 'Name');
+  if (password) {
+    validate.password(password);
+  }
   if (role) {
     validate.oneOf(role, ['ADMIN', 'ANALYST', 'VIEWER'], 'role');
   }
@@ -54,7 +67,7 @@ export const PUT = withApiHandler(async (request: NextRequest, { params }: { par
 
   // Check if user exists
   const existingUser = await withDb(
-    () => User.findById(params.id),
+    () => User.findById(id),
     'Failed to find user'
   );
 
@@ -67,7 +80,7 @@ export const PUT = withApiHandler(async (request: NextRequest, { params }: { par
   // Check email uniqueness if email is being changed
   if (email && email !== existingUser.email) {
     const emailExists = await withDb(
-      () => User.findOne({ email, _id: { $ne: params.id } }),
+      () => User.findOne({ email, _id: { $ne: id } }),
       'Failed to check email uniqueness'
     );
 
@@ -81,7 +94,7 @@ export const PUT = withApiHandler(async (request: NextRequest, { params }: { par
   // Check username uniqueness if username is being changed
   if (username && username !== existingUser.username) {
     const usernameExists = await withDb(
-      () => User.findOne({ username: username.toLowerCase().trim(), _id: { $ne: params.id } }),
+      () => User.findOne({ username: username.toLowerCase().trim(), _id: { $ne: id } }),
       'Failed to check username uniqueness'
     );
 
@@ -107,21 +120,26 @@ export const PUT = withApiHandler(async (request: NextRequest, { params }: { par
   }
 
   const updatedUser = await withDb(
-    () => User.findByIdAndUpdate(params.id, updateData, { new: true }).select('-password'),
+    () => User.findByIdAndUpdate(id, updateData, { new: true }).select('-password'),
     'Failed to update user'
   );
 
   return apiResponse.success(updatedUser, 'User updated successfully');
 });
 
-export const DELETE = withApiHandler(async (request: NextRequest, { params }: { params: { id: string } }) => {
+export const DELETE = withApiHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const authenticatedUser = auth.requireRoles(request, ['ADMIN']);
+
+  const { id } = await params;
+
+  // Validate ID
+  validate.objectId(id, 'User ID');
 
   await connectToDatabase();
 
   // Check if user exists
   const user = await withDb(
-    () => User.findById(params.id),
+    () => User.findById(id),
     'Failed to find user'
   );
 
@@ -146,14 +164,14 @@ export const DELETE = withApiHandler(async (request: NextRequest, { params }: { 
   }
 
   // Prevent self-deletion
-  if (authenticatedUser.id === params.id) {
+  if (authenticatedUser.id === id) {
     const error = new Error('Cannot delete your own account');
     (error as any).statusCode = 400;
     throw error;
   }
 
   await withDb(
-    () => User.findByIdAndDelete(params.id),
+    () => User.findByIdAndDelete(id),
     'Failed to delete user'
   );
 

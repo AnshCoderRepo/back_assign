@@ -11,7 +11,8 @@ import {
   Activity,
   Plus,
   Trash2,
-  Edit2
+  Edit2,
+  BarChart3
 } from 'lucide-react';
 
 export default function TransactionsPage() {
@@ -27,7 +28,9 @@ export default function TransactionsPage() {
 
   // Pagination & Search
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Form State
@@ -65,13 +68,13 @@ export default function TransactionsPage() {
       fetchRecords();
     }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [token, page, searchTerm]);
+  }, [token, page, searchTerm, limit]);
 
   const fetchRecords = async () => {
     try {
       const queryParams = new URLSearchParams({
         page: page.toString(),
-        limit: '10',
+        limit: limit.toString(),
         ...(searchTerm && { search: searchTerm })
       });
 
@@ -82,6 +85,7 @@ export default function TransactionsPage() {
       if (data.success) {
         setRecords(data.data.records);
         setTotalPages(data.data.pagination.totalPages || 1);
+        setTotalRecords(data.data.pagination.total || 0);
       }
     } catch (error) {
       console.error('Failed to fetch records', error);
@@ -190,6 +194,10 @@ export default function TransactionsPage() {
             <LayoutDashboard size={20} />
             Dashboard
           </Link>
+          <Link href="/analytics" className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <BarChart3 size={20} />
+            Analytics
+          </Link>
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-medium">
             <Wallet size={20} />
             Transactions
@@ -241,7 +249,7 @@ export default function TransactionsPage() {
             )}
           </header>
 
-          <div className="flex w-full mt-2">
+          <div className="flex flex-col gap-4 mt-2 sm:flex-row sm:items-center sm:justify-between">
             <input 
               type="text" 
               placeholder="Search by description or notes..." 
@@ -249,6 +257,19 @@ export default function TransactionsPage() {
               onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
               className="w-full max-w-md px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
             />
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-slate-500 dark:text-slate-400">Rows per page</label>
+              <select
+                value={limit}
+                onChange={(e) => { setLimit(parseInt(e.target.value, 10)); setPage(1); }}
+                className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -318,24 +339,50 @@ export default function TransactionsPage() {
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/30">
-              <button 
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-                className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
-              >
-                Previous
-              </button>
-              <span className="text-sm font-medium text-slate-500">
-                Page {page} of {totalPages}
-              </span>
-              <button 
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-                className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
-              >
-                Next
-              </button>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-800/30">
+              <div className="text-sm text-slate-500 dark:text-slate-400">
+                Showing {Math.min(records.length, totalRecords)} of {totalRecords} transactions — page {page} of {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={page === 1}
+                  onClick={() => setPage(page - 1)}
+                  className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Previous
+                </button>
+
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const startPage = Math.max(1, Math.min(totalPages - 4, page - 2));
+                    const pageNum = startPage + i;
+                    if (pageNum > totalPages) return null;
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setPage(pageNum)}
+                        className={`px-3 py-2 text-sm border rounded-lg font-medium transition-colors ${
+                          pageNum === page
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(page + 1)}
+                  className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -2,7 +2,7 @@ import { connectToDatabase } from '@/lib/db';
 import User from '@/models/User';
 import Record from '@/models/Record';
 import bcrypt from 'bcrypt';
-import { withDb } from '@/lib/api-utils';
+import { withDb, ApiError } from '@/lib/api-utils';
 
 export interface CreateUserData {
   name: string;
@@ -55,9 +55,7 @@ export class UserService {
     );
 
     if (existingUser) {
-      const error = new Error('Email already in use');
-      (error as any).statusCode = 409;
-      throw error;
+      throw new ApiError(409, 'Email already in use', 'DUPLICATE_ERROR');
     }
 
     // Hash password
@@ -91,9 +89,7 @@ export class UserService {
     );
 
     if (!existingUser) {
-      const error = new Error('User not found');
-      (error as any).statusCode = 404;
-      throw error;
+      throw new ApiError(404, 'User not found', 'NOT_FOUND');
     }
 
     // Check email uniqueness if email is being changed
@@ -104,9 +100,7 @@ export class UserService {
       );
 
       if (emailExists) {
-        const error = new Error('Email already in use');
-        (error as any).statusCode = 409;
-        throw error;
+        throw new ApiError(409, 'Email already in use', 'DUPLICATE_ERROR');
       }
     }
 
@@ -192,24 +186,18 @@ export class UserService {
     );
 
     if (!user) {
-      const error = new Error('Invalid credentials');
-      (error as any).statusCode = 401;
-      throw error;
+      throw new ApiError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
     }
 
     // Check if user is active
     if (user.status !== 'ACTIVE') {
-      const error = new Error('Account is inactive');
-      (error as any).statusCode = 403;
-      throw error;
+      throw new ApiError(403, 'Account is inactive', 'USER_INACTIVE');
     }
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    const isValidPassword = await bcrypt.compare(password, user.password!);
     if (!isValidPassword) {
-      const error = new Error('Invalid credentials');
-      (error as any).statusCode = 401;
-      throw error;
+      throw new ApiError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
     }
 
     // Return user without password
@@ -313,7 +301,6 @@ export class RecordService {
 
   static async getDashboardSummary(user: { id: string; role: string }) {
     await connectToDatabase();
-    const mongoose = require('mongoose');
 
     const matchQuery: any = { isDeleted: { $ne: true } };
 
@@ -401,15 +388,367 @@ export class RecordService {
     };
   }
 
+  static async getCategoryAnalytics(user: { id: string; role: string }, type?: 'INCOME' | 'EXPENSE') {
+    await connectToDatabase();
+
+    const matchQuery: any = { isDeleted: { $ne: true } };
+    if (type) {
+      matchQuery.type = type;
+    }
+
+    // Get detailed category breakdown with transaction counts
+    const categoryDetails = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: { type: '$type', category: '$category' },
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 },
+            minAmount: { $min: '$amount' },
+            maxAmount: { $max: '$amount' },
+            avgAmount: { $avg: '$amount' },
+            firstTransaction: { $min: '$date' },
+            lastTransaction: { $max: '$date' }
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.type',
+            categories: {
+              $push: {
+                category: '$_id.category',
+                totalAmount: '$totalAmount',
+                transactionCount: '$transactionCount',
+                minAmount: '$minAmount',
+                maxAmount: '$maxAmount',
+                avgAmount: '$avgAmount',
+                firstTransaction: '$firstTransaction',
+                lastTransaction: '$lastTransaction'
+              }
+            },
+            totalTypeAmount: { $sum: '$totalAmount' },
+            totalTypeTransactions: { $sum: '$transactionCount' }
+          }
+        },
+        { $sort: { '_id': 1 } }
+      ]),
+      'Failed to fetch category analytics'
+    );
+
+    // Get recent transactions for each category (last 5 per category)
+    const recentTransactionsByCategory = await withDb(
+      () => Record.find(matchQuery)
+        .sort({ date: -1 })
+        .limit(50) // Get more to distribute across categories
+        .populate('createdBy', 'name'),
+      'Failed to fetch recent transactions'
+    );
+
+    // Group recent transactions by category
+    const categoryRecentTransactions: any = {};
+    recentTransactionsByCategory.forEach(record => {
+      const key = `${record.type}_${record.category}`;
+      if (!categoryRecentTransactions[key]) {
+        categoryRecentTransactions[key] = [];
+      }
+      if (categoryRecentTransactions[key].length < 3) { // Limit to 3 recent per category
+        categoryRecentTransactions[key].push({
+          id: record._id,
+          amount: record.amount,
+          date: record.date,
+          description: record.description,
+          createdBy: record.createdBy?.name || 'Unknown'
+        });
+      }
+    });
+
+    // Enhance category details with recent transactions
+    const enhancedCategories = categoryDetails.map((typeGroup: any) => ({
+      ...typeGroup,
+      categories: typeGroup.categories.map((cat: any) => ({
+        ...cat,
+        recentTransactions: categoryRecentTransactions[`${typeGroup._id}_${cat.category}`] || []
+      }))
+    }));
+
+    return {
+      summary: enhancedCategories,
+      totalCategories: enhancedCategories.reduce((sum: number, type: any) => sum + type.categories.length, 0),
+      totalTransactions: enhancedCategories.reduce((sum: number, type: any) => sum + type.totalTypeTransactions, 0),
+      totalAmount: enhancedCategories.reduce((sum: number, type: any) => sum + type.totalTypeAmount, 0)
+    };
+  }
+
+  static async getDetailedAnalytics(user: { id: string; role: string }, filters: {
+    period: string;
+    category?: string;
+    type?: 'INCOME' | 'EXPENSE';
+  }) {
+    await connectToDatabase();
+
+    const { period, category, type } = filters;
+    const matchQuery: any = { isDeleted: { $ne: true } };
+
+    if (type) matchQuery.type = type;
+    if (category) matchQuery.category = category;
+
+    // Calculate date range based on period
+    const now = new Date();
+    let startDate: Date;
+
+    switch (period) {
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'quarter':
+        const quarterStart = Math.floor(now.getMonth() / 3) * 3;
+        startDate = new Date(now.getFullYear(), quarterStart, 1);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    matchQuery.date = { $gte: startDate };
+
+    // 1. Daily transaction trends (for line charts)
+    const dailyTrends = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: {
+              date: {
+                $dateToString: { format: '%Y-%m-%d', date: '$date' }
+              },
+              type: '$type'
+            },
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.date': 1, '_id.type': 1 } }
+      ]),
+      'Failed to fetch daily trends'
+    );
+
+    // 2. Category distribution (for pie/donut charts)
+    const categoryDistribution = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: { type: '$type', category: '$category' },
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 }
+          }
+        },
+        { $sort: { totalAmount: -1 } }
+      ]),
+      'Failed to fetch category distribution'
+    );
+
+    // 3. Hourly patterns (for heatmaps)
+    const hourlyPatterns = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: {
+              hour: { $hour: '$date' },
+              type: '$type'
+            },
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.hour': 1, '_id.type': 1 } }
+      ]),
+      'Failed to fetch hourly patterns'
+    );
+
+    // 4. Amount ranges distribution (for histograms)
+    const amountRanges = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $bucket: {
+            groupBy: '$amount',
+            boundaries: [0, 50, 100, 500, 1000, 5000, 10000, 50000, 100000],
+            default: '100000+',
+            output: {
+              count: { $sum: 1 },
+              totalAmount: { $sum: '$amount' },
+              types: { $addToSet: '$type' }
+            }
+          }
+        }
+      ]),
+      'Failed to fetch amount ranges'
+    );
+
+    // 5. Top spending categories with trends
+    const topCategories = await withDb(
+      () => Record.aggregate([
+        { $match: matchQuery },
+        {
+          $group: {
+            _id: { type: '$type', category: '$category' },
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 },
+            avgAmount: { $avg: '$amount' }
+          }
+        },
+        { $sort: { totalAmount: -1 } },
+        { $limit: 10 }
+      ]),
+      'Failed to fetch top categories'
+    );
+
+    // 6. Monthly comparison (current vs previous period)
+    const previousPeriodStart = new Date(startDate);
+    if (period === 'month') {
+      previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 1);
+    } else if (period === 'quarter') {
+      previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 3);
+    } else if (period === 'year') {
+      previousPeriodStart.setFullYear(previousPeriodStart.getFullYear() - 1);
+    }
+
+    const currentPeriodData = await withDb(
+      () => Record.aggregate([
+        { $match: { ...matchQuery, date: { $gte: startDate } } },
+        {
+          $group: {
+            _id: '$type',
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 }
+          }
+        }
+      ]),
+      'Failed to fetch current period data'
+    );
+
+    const previousPeriodData = await withDb(
+      () => Record.aggregate([
+        {
+          $match: {
+            ...matchQuery,
+            date: { $gte: previousPeriodStart, $lt: startDate }
+          }
+        },
+        {
+          $group: {
+            _id: '$type',
+            totalAmount: { $sum: '$amount' },
+            transactionCount: { $sum: 1 }
+          }
+        }
+      ]),
+      'Failed to fetch previous period data'
+    );
+
+    // Format data for charts
+    const chartData = {
+      dailyTrends: dailyTrends.map(item => ({
+        date: item._id.date,
+        type: item._id.type,
+        amount: item.totalAmount,
+        count: item.transactionCount
+      })),
+
+      categoryDistribution: categoryDistribution.map(item => ({
+        type: item._id.type,
+        category: item._id.category,
+        amount: item.totalAmount,
+        count: item.transactionCount,
+        percentage: 0 // Will be calculated below
+      })),
+
+      hourlyPatterns: hourlyPatterns.map(item => ({
+        hour: item._id.hour,
+        type: item._id.type,
+        amount: item.totalAmount,
+        count: item.transactionCount
+      })),
+
+      amountRanges: amountRanges.map(item => ({
+        range: item._id,
+        count: item.count,
+        amount: item.totalAmount,
+        types: item.types
+      })),
+
+      topCategories: topCategories.map(item => ({
+        type: item._id.type,
+        category: item._id.category,
+        amount: item.totalAmount,
+        count: item.transactionCount,
+        avgAmount: Math.round(item.avgAmount * 100) / 100
+      })),
+
+      periodComparison: {
+        current: currentPeriodData.reduce((acc: any, item: any) => {
+          acc[item._id] = { amount: item.totalAmount, count: item.transactionCount };
+          return acc;
+        }, {}),
+        previous: previousPeriodData.reduce((acc: any, item: any) => {
+          acc[item._id] = { amount: item.totalAmount, count: item.transactionCount };
+          return acc;
+        }, {})
+      }
+    };
+
+    // Calculate percentages for category distribution
+    const totalByType: any = {};
+    chartData.categoryDistribution.forEach((item: any) => {
+      if (!totalByType[item.type]) totalByType[item.type] = 0;
+      totalByType[item.type] += item.amount;
+    });
+
+    chartData.categoryDistribution.forEach((item: any) => {
+      item.percentage = Math.round((item.amount / totalByType[item.type]) * 100 * 100) / 100;
+    });
+
+    return {
+      period,
+      dateRange: {
+        start: startDate.toISOString().split('T')[0],
+        end: now.toISOString().split('T')[0]
+      },
+      filters: { category, type },
+      summary: (() => {
+        const totalTransactions = chartData.dailyTrends.reduce((sum: number, item: any) => sum + item.count, 0);
+        const totalAmount = chartData.categoryDistribution.reduce((sum: number, item: any) => sum + item.amount, 0);
+        const avgTransactionAmount = totalTransactions ? Math.round((totalAmount / totalTransactions) * 100) / 100 : 0;
+
+        return {
+          totalTransactions,
+          totalAmount,
+          categoriesCount: new Set(chartData.categoryDistribution.map((item: any) => item.category)).size,
+          avgTransactionAmount
+        };
+      })(),
+      charts: chartData
+    };
+  }
+
   static async getRecentRecords(user: { id: string; role: string }, limit = 5) {
     await connectToDatabase();
 
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
     const query: any = { isDeleted: { $ne: true } };
 
     return withDb(
       () => Record.find(query)
         .sort({ date: -1, createdAt: -1 })
-        .limit(limit)
+        .limit(safeLimit)
         .populate('createdBy', 'name email'),
       'Failed to fetch recent records'
     );
