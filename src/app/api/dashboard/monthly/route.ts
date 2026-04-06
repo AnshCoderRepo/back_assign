@@ -1,19 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { auth, withApiHandler, apiResponse } from '@/lib/api-utils';
 import { connectToDatabase } from '@/lib/db';
 import Record from '@/models/Record';
-import { extractUserFromRequest, checkRole } from '@/middleware/auth';
 
-export async function GET(request: NextRequest) {
-  try {
-    const authUser = extractUserFromRequest(request);
-    if (!checkRole(authUser, ['ADMIN', 'ANALYST', 'VIEWER'])) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+export const dynamic = 'force-dynamic';
 
-    const { searchParams } = new URL(request.url);
-    const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString());
+export const GET = withApiHandler(async (request: NextRequest) => {
+  const user = auth.requireRoles(request, ['ADMIN', 'ANALYST', 'VIEWER']);
+  const { searchParams } = new URL(request.url);
+  const year = Number(searchParams.get('year')) || new Date().getFullYear();
 
-    await connectToDatabase();
+  await connectToDatabase();
 
     const startDate = new Date(year, 0, 1);
     const endDate = new Date(year, 11, 31, 23, 59, 59);
@@ -47,9 +44,5 @@ export async function GET(request: NextRequest) {
       { $sort: { _id: 1 } }
     ]);
 
-    return NextResponse.json({ year, monthlySummary });
-  } catch (error: any) {
-    console.error('Fetch monthly summary error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
+    return apiResponse.success({ year, monthlySummary }, 'Monthly summary retrieved successfully');
+});

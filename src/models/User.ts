@@ -28,8 +28,27 @@ const UserSchema: Schema = new Schema(
       default: 'ACTIVE',
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: {
+      transform(_, ret) {
+        delete ret.__v;
+        delete ret.password;
+        return ret;
+      }
+    },
+    toObject: {
+      transform(_, ret) {
+        delete ret.__v;
+        delete ret.password;
+        return ret;
+      }
+    }
+  }
 );
+
+UserSchema.index({ email: 1 }, { unique: true, sparse: true });
+UserSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 // Clear mongoose models cache during Next.js hot-reloading
 if (mongoose.models.User) {

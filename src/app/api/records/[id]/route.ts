@@ -28,6 +28,10 @@ export const PUT = withApiHandler(async (
     validate.required(data.category, 'category');
   }
 
+  if (data.date !== undefined) {
+    validate.date(data.date);
+  }
+
   await connectToDatabase();
 
   const record = await Record.findByIdAndUpdate(

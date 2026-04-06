@@ -37,6 +37,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
   validate.required(name, 'Name');
   validate.required(identifier, 'Email or Username');
   validate.required(password, 'Password');
+  validate.password(password);
 
   let email: string | undefined;
   let username: string | undefined;
@@ -69,7 +70,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
   );
 
   if (existingUser) {
-    throw new Error(existingUser.email === email ? 'Email already in use' : 'Username already in use');
+    throw new ApiError(409, existingUser.email === email ? 'Email already in use' : 'Username already in use', 'DUPLICATE_ERROR');
   }
 
   // Hash password

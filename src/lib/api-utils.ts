@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_in_production';
+const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET must be defined in environment configuration');
+  }
+  return secret;
+};
 
 export interface AuthUser {
   id: string;
@@ -65,7 +71,7 @@ export const auth = {
         return null;
       }
 
-      const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
+      const decoded = jwt.verify(token, getJwtSecret()) as AuthUser;
 
       return decoded;
     } catch (error) {
@@ -97,7 +103,12 @@ export const auth = {
 // Input validation helpers
 export const validate = {
   required: (value: any, fieldName: string): void => {
-    if (value === undefined || value === null || value === '') {
+    if (
+      value === undefined ||
+      value === null ||
+      (typeof value === 'string' && value.trim() === '') ||
+      value === ''
+    ) {
       throw new ApiError(400, `${fieldName} is required`, 'VALIDATION_ERROR');
     }
   },
@@ -133,6 +144,27 @@ export const validate = {
     if (!objectIdRegex.test(id)) {
       throw new ApiError(400, `Invalid ${fieldName} format`, 'VALIDATION_ERROR');
     }
+  },
+
+  password: (password: string): void => {
+    if (typeof password !== 'string' || password.length < 6) {
+      throw new ApiError(400, 'Password must be at least 6 characters long', 'VALIDATION_ERROR');
+    }
+  },
+
+  date: (date: string | Date): void => {
+    let dateObj: Date;
+    if (typeof date === 'string') {
+      dateObj = new Date(date);
+    } else if (date instanceof Date) {
+      dateObj = date;
+    } else {
+      throw new ApiError(400, 'Date must be an ISO date string or Date object', 'VALIDATION_ERROR');
+    }
+    
+    if (isNaN(dateObj.getTime())) {
+      throw new ApiError(400, 'Invalid date format', 'VALIDATION_ERROR');
+    }
   }
 };
 
@@ -145,6 +177,10 @@ export const withDb = async <T>(
     return await operation();
   } catch (error: any) {
     console.error('Database error:', error);
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
 
     // Handle specific database errors
     if (error.code === 11000) {
@@ -185,7 +221,8 @@ export const withApiHandler = (
 ) => {
   return async (request: NextRequest, context?: any): Promise<NextResponse> => {
     try {
-      const ip = (request as any).ip || request.headers.get('x-forwarded-for') || '127.0.0.1';
+      const ipSource = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || (request as any).ip || '127.0.0.1';
+      const ip = ipSource.split(',')[0].trim();
       if (!requireRateLimit(ip)) {
         throw new ApiError(429, 'Too many requests. Please try again later.', 'RATE_LIMIT_EXCEEDED');
       }

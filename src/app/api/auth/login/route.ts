@@ -5,7 +5,10 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { withApiHandler, apiResponse, validate, withDb, ApiError } from '@/lib/api-utils';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key_change_in_production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET must be defined in environment configuration');
+}
 
 export const POST = withApiHandler(async (request: NextRequest) => {
   const body = await request.json();
@@ -13,6 +16,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
 
   validate.required(identifier, 'Identifier');
   validate.required(password, 'Password');
+  validate.password(password);
 
   await connectToDatabase();
 
@@ -31,7 +35,7 @@ export const POST = withApiHandler(async (request: NextRequest) => {
     throw new ApiError(401, 'Invalid credentials');
   }
 
-  const isMatch = await bcrypt.compare(password, user.password);
+  const isMatch = await bcrypt.compare(password, user.password!);
   
   if (!isMatch) {
     throw new ApiError(401, 'Invalid credentials');

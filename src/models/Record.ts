@@ -22,7 +22,26 @@ const RecordSchema: Schema = new Schema(
     isDeleted: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: {
+      transform(_, ret) {
+        delete ret.__v;
+        return ret;
+      }
+    },
+    toObject: {
+      transform(_, ret) {
+        delete ret.__v;
+        return ret;
+      }
+    }
+  }
 );
+
+RecordSchema.index({ date: -1 });
+RecordSchema.index({ type: 1, category: 1 });
+RecordSchema.index({ isDeleted: 1 });
+RecordSchema.index({ createdBy: 1 });
 
 export default mongoose.models.Record || mongoose.model<IRecord>('Record', RecordSchema);

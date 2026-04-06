@@ -7,10 +7,15 @@ export const GET = withApiHandler(async (request: NextRequest) => {
   const user = auth.requireRoles(request, ['ADMIN', 'ANALYST', 'VIEWER']);
 
   const { searchParams } = new URL(request.url);
+  const period = searchParams.get('period') || 'month'; // 'week', 'month', 'quarter', 'year'
+  const category = searchParams.get('category') || undefined;
   const type = searchParams.get('type') as 'INCOME' | 'EXPENSE' | undefined;
 
-  // Get comprehensive category analytics
-  const categoryAnalytics = await RecordService.getCategoryAnalytics(user, type);
+  const analytics = await RecordService.getDetailedAnalytics(user, {
+    period,
+    category,
+    type
+  });
 
-  return apiResponse.success({ categoryAnalytics }, 'Category analytics retrieved successfully');
+  return apiResponse.success({ analytics }, 'Detailed analytics retrieved successfully');
 });
