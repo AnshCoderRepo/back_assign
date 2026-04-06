@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import User from '@/models/User';
 import bcrypt from 'bcrypt';
-import { auth, validate, withDb, withApiHandler, apiResponse } from '@/lib/api-utils';
+import { auth, validate, withDb, withApiHandler, apiResponse, ApiError } from '@/lib/api-utils';
 
 export const GET = withApiHandler(async (request: NextRequest) => {
   const user = auth.requireRoles(request, ['ADMIN']);

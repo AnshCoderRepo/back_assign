@@ -26,14 +26,16 @@ const RecordSchema: Schema = new Schema(
     timestamps: true,
     toJSON: {
       transform(_, ret) {
-        delete ret.__v;
-        return ret;
+        const output = ret as any;
+        delete output.__v;
+        return output;
       }
     },
     toObject: {
       transform(_, ret) {
-        delete ret.__v;
-        return ret;
+        const output = ret as any;
+        delete output.__v;
+        return output;
       }
     }
   }
